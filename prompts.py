@@ -11,7 +11,6 @@ df = load_data()
 
 
 # Player Summary Prompt
-# prompts.py
 
 # ---------------- Player Prompts ----------------
 def generate_player_summary_prompt(df, player_name, start_year=None, end_year=None):
