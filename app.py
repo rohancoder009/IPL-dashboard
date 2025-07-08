@@ -151,7 +151,6 @@ if option == "Team Analysis":
                 st.success(summary)
 
 # Player Analysis Section
-# ... (Unchanged, as per your request)
 
 # Bowler Analysis Section
 elif option == "Bowler Analysis":
