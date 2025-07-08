@@ -60,7 +60,7 @@ if option == "Team Analysis":
             st.dataframe(result_df)
         if "team_season_df" in st.session_state:
             if st.button("Summarize Team Season Performance"):
-                prompt = pm.generate_team_summary_prompt(selected_team)
+                prompt = pm.genrate_team_season_summary_prompt(selected_team, st.session_state.team_season_df)
                 summary = ai.summarize_stats(prompt)
                 st.markdown("Summary")
                 st.success(summary)
@@ -84,7 +84,7 @@ if option == "Team Analysis":
 
         if "head_to_head_df" in st.session_state:
             if st.button("Summarize Head to Head"):
-                prompt = pm.generate_team_vs_team_summary_prompt(team1, team2, start, end)
+                prompt = pm.genrate_head_to_head_summary_prompt(team1, team2, st.session_state.head_to_head_df)
                 summary = ai.summarize_stats(prompt)
                 st.markdown("Summary")
                 st.success(summary)
@@ -107,27 +107,48 @@ if option == "Team Analysis":
         record_team = st.selectbox("Select Team", all_teams)
         team_solo, team_vs_opponent = an.team_record(df, record_team)
         if st.button("Show Team Record"):
+            st.session_state.team_record_df = team_vs_opponent
             st.dataframe(team_solo)
         if st.button("Show Opponent Record"):
             st.dataframe(team_vs_opponent)
+        if "team_record_df" in st.session_state:
+            if st.button("Summarize Team Record"):
+                prompt = pm.genrate_team_record_summary_prompt(record_team, st.session_state.team_record_df)
+                summary = ai.summarize_stats(prompt)
+                st.markdown("Summary")
+                st.success(summary)
 
     with tab5:
         team_for_runs = st.selectbox("Select Team", all_teams)
         highest_scores_df = an.highest_scores_by_team(df, team_for_runs)
         if st.button("Show Highest Scores"):
+            st.session_state.highest_scores_df = highest_scores_df
             st.dataframe(highest_scores_df)
         if st.button("Visualize Highest Scores"):
             fig = vv.plot_highest_run_by_team(df, team_for_runs)
             st.pyplot(fig)
+        if "highest_scores_df" in st.session_state:
+            if st.button("Summarize Highest Scores"):
+                prompt = pm.genrate_highest_scores_prompt(team_for_runs, st.session_state.highest_scores_df)
+                summary = ai.summarize_stats(prompt)
+                st.markdown("Summary")
+                st.success(summary)
 
     with tab6:
         team_for_chase = st.selectbox("Select Team", all_teams)
         highest_chase_df = an.highest_chase_by_team(df, team_for_chase)
         if st.button("Show Highest Chases"):
+            st.session_state.highest_chase_df = highest_chase_df
             st.dataframe(highest_chase_df)
         if st.button("Visualize Highest Chases"):
             fig = vv.plot_highest_chase_by_team(df, team_for_chase)
             st.pyplot(fig)
+        if "highest_chase_df" in st.session_state:
+            if st.button("Summarize Highest Chases"):
+                prompt = pm.genrate_highest_chases_prompt(team_for_chase, st.session_state.highest_chase_df)
+                summary = ai.summarize_stats(prompt)
+                st.markdown("Summary")
+                st.success(summary)
 
 # Player Analysis Section
 # ... (Unchanged, as per your request)
@@ -197,7 +218,9 @@ elif option == "Bowler Analysis":
                         st.warning("Prompt generation failed")
                 except Exception as e:
                     st.warning(str(e))
-
+        if st.button("visualize Head to head of bowler"):
+            fig = vv.plot_bowler_headtohead(df,bowler1,bowler2,h2h_start,h2h_end)
+            st.plotly_chart(fig, use_container_width=True)
     # ---------------- Economy Rate ----------------
     with tab3:
         econ_team = st.selectbox("Select Bowling Team", all_bowling_teams)
