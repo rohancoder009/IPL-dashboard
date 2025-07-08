@@ -1,451 +1,303 @@
+import seaborn  as sns
+import matplotlib.pyplot as plt
+import analysis as an
 import pandas as pd
+import plotly.graph_objects as go
 import numpy as np
-
-# ----------------------------------------------
-#  BATTER FUNCTIONS
-# ----------------------------------------------
-
-def player_analysis(df, player_name, start_year=None, end_year=None):
+def normalize_dataframe(df, exclude_cols=None):
     """
-    Analyzes a player's batting performance across selected seasons.
-    Returns matches played, total runs, average, strike rate, 50s, 100s.
+    Normalize numeric columns in the DataFrame between 0 and 1.
+    
+    Parameters:
+    - df: DataFrame to normalize
+    - exclude_cols: list of column names to exclude from normalization (e.g., ['Player', 'Team'])
+
+    Returns:
+    - A new DataFrame with normalized numeric columns
     """
-    if df.empty or 'batter' not in df.columns:
-        return pd.DataFrame()
+    df_norm = df.copy()
+    exclude_cols = exclude_cols if exclude_cols else []
 
-    min_year = df['season'].min()
-    max_year = df['season'].max()
+    for col in df.columns:
+        if col in exclude_cols or df[col].dtype == 'object':
+            continue
 
-    if start_year is None:
-        start_year = min_year
-    if end_year is None:
-        end_year = max_year
+        col_min = df[col].min()
+        col_max = df[col].max()
+        if col_max != col_min:
+            df_norm[col] = (df[col] - col_min) / (col_max - col_min)
+        else:
+            df_norm[col] = 0  # or 1, if you prefer to indicate full scale
 
-    # Ensure year bounds are valid
-    if start_year < min_year or end_year > max_year:
-        raise ValueError(f"Invalid year input. Data available from {min_year} to {max_year}")
-
-    df = df[(df['season'] >= start_year) & (df['season'] <= end_year)]
-
-    # Early exit if player is not in filtered data
-    if player_name not in df['batter'].unique():
-        return pd.DataFrame()
-
-    player_df = df[df['batter'] == player_name]
-
-    if player_df.empty:
-        return pd.DataFrame()
-
-    # Safe handling of outs
-    dismissed_mask = player_df['player_dismissed'] == player_name
-    outs = dismissed_mask.sum()
-
-    total_runs = player_df['batsman_runs'].sum()
-    balls_faced = player_df.shape[0]
-    matches = player_df['match_id'].nunique()
-
-    fours = (player_df['batsman_runs'] == 4).sum()
-    sixes = (player_df['batsman_runs'] == 6).sum()
-
-    avg = round(total_runs / outs, 2) if outs > 0 else 'NA'
-    sr = round((total_runs / balls_faced) * 100, 2) if balls_faced > 0 else 0
-
-    matchwise = player_df.groupby('match_id')['batsman_runs'].sum()
-    fifties = matchwise[(matchwise >= 50) & (matchwise < 100)].count()
-    hundreds = matchwise[matchwise >= 100].count()
-
-    summary = {
-        'Player': player_name,
-        'Matches': matches,
-        'Runs': total_runs,
-        'Average': avg,
-        'Strike Rate': sr,
-        '50s': fifties,
-        '100s': hundreds,
-        'From': start_year,
-        'To': end_year,
-        '6s': sixes,
-        '4s': fours
-    }
-
-    return pd.DataFrame([summary])
-
-
-def top_batsmen_by_season(df, season='all',n=10):
+    return df_norm
+def top_batsmen_by_season(df,season='all',n=10):
     """
-    Returns top n run-scorers for a given season or for full IPL .
+    Plots top batsmen for either a single season or all seasons.
     """
-    if season!= 'all':
-        season = int(season)
-        if season not in df['season'].unique():
-            raise ValueError (f"season {season} not found in the data")
-        df = df[df['season'] == season]
-        top_batsman = df.groupby('batter')['batsman_runs'].sum()
-        top_batsman = top_batsman.sort_values(ascending=False).head(n)
-        # top_batsman['season']=season
-        return top_batsman.reset_index()
-    else:
-        all_season_stats = []
-        for year in sorted(df['season'].unique()):
-            df_season=df[df['season']==year]
-            top_batsman=(
-                df_season.groupby('batter')['batsman_runs'].sum()
-                .sort_values(ascending = False)
-                .head(n)
-                .reset_index()
-            )
-            top_batsman['season']=year
-            all_season_stats.append(top_batsman)
-        return pd.concat(all_season_stats,ignore_index=True)
+    # Clean column names
+    df.columns = df.columns.str.strip().str.lower()
 
-def batsman_growth_by_season(df,player_name):
-    if player_name not in df['batter'].unique():
-        raise ValueError(f"player {player_name} not found in data")
-    df_player = df[df['batter']==player_name]
-    result=[]
-    for season in sorted(df['season'].unique()):
-        season_df=df_player[df_player['season']==season]
-        runs=season_df['batsman_runs'].sum()
-        balls=season_df.shape[0]
-        outs = season_df[season_df['player_dismissed']==player_name].shape[0]
-        matches = season_df['match_id'].nunique()
-        fours = df_player[df_player['batsman_runs']==4].shape[0]
-        sixes= df_player[df_player['batsman_runs']==6].shape[0]
-        strike_rate=round((runs/balls)*100,2) if balls else 0
-        avg = round(runs/outs,2) if outs else 'NA'
-        
-        matchwise_runs=season_df.groupby('match_id')['batsman_runs'].sum()
-        fifties = matchwise_runs[(matchwise_runs>= 50 )&(matchwise_runs<100)].count()
-        hundreds= matchwise_runs[(matchwise_runs >= 100)].count()
-        result.append({
-            'player':player_name,
-            'Season': season,
-            'Runs': runs,
-            'Matches': matches,
-            'Average': avg,
-            'Strike Rate': strike_rate,
-            '50s': fifties,
-            '100s': hundreds,
-            '4s': fours,
-            '6s':sixes,
-        })
-    return pd.DataFrame(result)
-def compare_batsman_growth(df,player1,player2):
-    df1= batsman_growth_by_season(df,player1)
-    df2= batsman_growth_by_season(df,player2)
-    return pd.concat([df1,df2],ignore_index=True)
-
-def most_runs_by_IPL(df, n=10):
-    runs=df.groupby('batter')['batsman_runs'].sum().sort_values(ascending = False).head(n)
-    return runs.reset_index().rename(columns={'batter':'player','batsman_runs':'player_runs'})
-def player_against_teams(df,player_name,team_name,season='all'):
-    if player_name not in df['batter'].unique():
-        raise ValueError(f'Player "{player_name}" not found in data')
-
-    if team_name not in df['bowling_team'].unique():
-        raise ValueError(f'Team "{team_name}" not found in data')
-
-    data = df[(df['batter'] == player_name) & (df['bowling_team'] == team_name)]
+    # Get data
+    top_batsmen = an.top_batsmen_by_season(df, season)
 
     if season != 'all':
-        season = int(season)
-        if season not in df['season'].unique():
-            raise ValueError(f'Season {season} not found in data')
-        data = data[data['season'] == season]
-
-    if data.empty:
-        return f"No data found for {player_name} vs {team_name} in season {season}"
-
-    total_runs = data['batsman_runs'].sum()
-    balls_faced = data.shape[0]
-    outs = data[data['player_dismissed'] == player_name].shape[0]
-    sr = (total_runs / balls_faced) * 100 if balls_faced else 0
-    fours = data[data['batsman_runs'] == 4].shape[0]
-    sixes = data[data['batsman_runs'] == 6].shape[0]
-
-    result = {
-        'Player': player_name,
-        'Against Team': team_name,
-        'Season': season,
-        'Total Runs': total_runs,
-        'Balls Faced': balls_faced,
-        'Dismissals': outs,
-        'Strike Rate': round(sr, 2),
-        'Fours': fours,
-        'Sixes': sixes,
-    }
-
-    return pd.DataFrame([result])
-
-def player_head_to_head(df,player1,player2,start_year=None , end_year=None):
-    df1=player_analysis(df,player1)
-    df2=player_analysis(df,player2)
-    return pd.concat([df1,df2],ignore_index=True)    
-def most_strikerate_by_players(df, n =10, min_balls= 100):
-    runs = df.groupby('batter')['batsman_runs'].sum()
-    balls = df.groupby('batter').size()
-    strike_rate_df=pd.DataFrame({
-        'Runs':runs,
-        'Balls Faced':balls
-    })
-    strike_rate_df = strike_rate_df[strike_rate_df['Balls Faced']>=min_balls]
-    strike_rate_df['Strike Rate']=(strike_rate_df['Runs']/strike_rate_df['Balls Faced'])*100
-    strike_rate_df['Strike Rate'] = strike_rate_df['Strike Rate'].round(2)
-    return strike_rate_df.sort_values(by='Strike Rate',ascending= False).head(n)
-def most_six_by_player(df,n=10):
-    sixes =df[df['batsman_runs']==6]
-    six_count = sixes.groupby('batter').size().sort_values(ascending = False)
-    
-    return six_count.head(n).reset_index(name='sixes')
-def most_fours_by_player(df,n=10):
-    fours =df[df['batsman_runs']==4]
-    fours_count = fours.groupby('batter').size().sort_values(ascending = False)
-    
-    return fours_count.head(n).reset_index(name='fours')
-
-# ----------------------------------------------
-#  BOWLER FUNCTIONS
-# ---------------------------------------`-------
-def bowler_record(df,bowler_name,start_year =None,end_year = None):
-    if bowler_name not in df['bowler'].unique():
-        raise ValueError(f"bowler {bowler_name} not in the data ")
-    min_year= df['season'].min()
-    max_year= df['season'].max()
-    start_year = start_year if start_year else min_year
-    end_year = end_year if end_year else max_year
-    df_bowler = df[(df['bowler']==bowler_name)&
-                   (df['season']>= start_year)&
-                   (df['season']<= end_year)]
-    ball_bowled = df_bowler.shape[0]
-    run_conceded = df_bowler['total_runs'].sum()
-    wickets = df_bowler[df_bowler['player_dismissed'].notna()].shape[0]
-    matches = df_bowler['match_id'].nunique()
-    
-    avg = round(run_conceded/wickets,2) if wickets else 'NA'
-    eco = round((run_conceded/ball_bowled)*6,2) if ball_bowled else 0
-    sr = round(ball_bowled/wickets,2) if wickets else 'NA'
-    
-    dot_balls = df_bowler[df_bowler['total_runs']==0].shape[0]
-    fours = df_bowler[df_bowler['batsman_runs']==4].shape[0]
-    sixes = df_bowler[df_bowler['batsman_runs']==6].shape[0]
-    
-    return pd.DataFrame([{
-        'Bowler': bowler_name,
-        'Matches': matches,
-        'Balls Bowled': ball_bowled,
-        'Runs': run_conceded,
-        'Wickets': wickets,
-        'Average': avg,
-        'Economy': eco,
-        'Strike Rate': sr,
-        'Dots': dot_balls,
-        'Fours': fours,
-        'Sixes': sixes,
-        'From': start_year,
-        'To': end_year
-    }]) 
-def bowler_headtohead(df,player1,player2,start_year,end_year):
-    df1=bowler_record(df,player1,start_year,end_year)
-    df2=bowler_record(df,player2,start_year,end_year)
-    return pd.concat([df1,df2],ignore_index= True)
-
-    
-def economy_rate(df, team_name):
-    """
-    Returns the bowler with the lowest economy rate (minimum 50 balls bowled) from a given team.
-    """
-    df = df[df['bowling_team'] == team_name]
-    total_runs = df.groupby('bowler')['total_runs'].sum()
-    total_balls = df.groupby('bowler')['iswicket'].count()
-
-    valid_bowlers = total_balls[total_balls >= 50]
-    economy_rate = total_runs[valid_bowlers.index] / (valid_bowlers / 6)
-
-    best_bowler = economy_rate.sort_values().head(1)
-    return best_bowler
-
-#4 bowler 
-# ----------------------------------------------
-#  TEAM FUNCTIONS
-# ----------------------------------------------
-
-def head_to_head(df, team1, team2, start_year=None, end_year=None):
-    """
-    Returns head-to-head stats between two teams including wins, tosses, ties, etc.
-    """
-    min_year = df['season'].min()
-    max_year = df['season'].max()
-    if start_year is None:
-        start_year = min_year
-    if end_year is None:
-        end_year = max_year
-    if start_year < min_year or end_year > max_year:
-        raise ValueError(f"Invalid year input. Data available from {min_year} to {max_year}")
-
-    team1 = team1.strip().lower()
-    team2 = team2.strip().lower()
-
-    df = df[(df['season'] >= start_year) & (df['season'] <= end_year)]
-    h2h_df = df[
-        ((df['team1'].str.lower() == team1) & (df['team2'].str.lower() == team2)) |
-        ((df['team2'].str.lower() == team1) & (df['team1'].str.lower() == team2))
-    ]
-
-    if h2h_df.empty:
-        raise ValueError(f"No matches found between {team1} and {team2}")
-
-    total_matches = h2h_df.shape[0]
-
-    win_counts = h2h_df['winner'].str.lower().value_counts()
-    team1_wins = win_counts.get(team1, 0)
-    team2_wins = win_counts.get(team2, 0)
-    ties_cancelled = total_matches - (team1_wins + team2_wins)
-
-    toss_counts = h2h_df['toss_winner'].str.lower().value_counts()
-    team1_toss = toss_counts.get(team1, 0)
-    team2_toss = toss_counts.get(team2, 0)
-
-    return {
-        'Total Matches': total_matches,
-        f'{team1.title()} Wins': team1_wins,
-        f'{team2.title()} Wins': team2_wins,
-        'Ties/No Results': ties_cancelled,
-        f'{team1.title()} Toss Wins': team1_toss,
-        f'{team2.title()} Toss Wins': team2_toss
-    }
-
-
-def team_season_performance(df, team_name):
-    """
-    Returns per-season stats for a team: matches played, matches won, and win percentage.
-    """
-    # Standardize relevant columns
-    columns_to_clean = ['team1', 'team2', 'winner', 'toss_winner', 'batter', 'player_dismissed']
-    for col in columns_to_clean:
-      df.loc[:, col] = df[col].astype(str).str.lower().str.strip()
-
-    team_name = team_name.strip().lower()
-    df['season'] = df['season'].astype(int)
-
-    if team_name not in df['team1'].unique() and team_name not in df['team2'].unique():
-        raise ValueError(f"No match data found for team '{team_name}'")
-
-    team_matches = df[(df['team1'] == team_name) | (df['team2'] == team_name)]
-
-    matches_per_season = team_matches.groupby('season')['id'].count()
-    wins_per_season = team_matches[team_matches['winner'] == team_name].groupby('season')['id'].count()
-
-    result_df = pd.DataFrame({
-        'Matches Played': matches_per_season,
-        'Matches Won': wins_per_season
-    })
-
-    result_df['Matches Won'] = result_df['Matches Won'].fillna(0).astype(int)
-    result_df['win %'] = (result_df['Matches Won'] / result_df['Matches Played'].replace(0, float('nan')) * 100).round(2)
-
-    return result_df
-
-def parse_team_record_to_df(team_dict):
-    team_name= list(team_dict.keys())[0]
-    overall_stats=team_dict[team_name]['Overall']
-    opponent_stats=team_dict[team_name]['Against Opponents']
-    overall_df=pd.DataFrame([overall_stats])
-    overall_df.insert(0,'Team',team_name)
-    
-    vs_opponents=pd.DataFrame(opponent_stats).T.reset_index()
-    vs_opponents.rename(columns={'index':'opponent'},inplace=True)
-    vs_opponents.insert(0,'Team',team_name)
-    return overall_df,vs_opponents
-def team_win_by_season(df):
-    """
-    Returns pivot table: each team’s number of wins across all seasons.
-    """
-    win_counts = df.groupby(['season', 'winner']).size().reset_index(name='wins')
-    pivot = win_counts.pivot(index='winner', columns='season', values='wins').fillna(0)
-    return pivot
-def team_record(df, team):
-    team = team.strip().lower()
-
-    # Filter only those matches where the team participated
-    temp_df = df[(df['team1'].str.lower() == team) | (df['team2'].str.lower() == team)].copy()
-
-    # Basic stats
-    total_matches = temp_df.shape[0]
-    total_wins = (temp_df['winner'].str.lower() == team).sum()
-    total_draws = temp_df['winner'].isnull().sum()
-    total_loss = ((temp_df['winner'].str.lower() != team) & temp_df['winner'].notna()).sum()
-    win_percentage = (total_wins / total_matches) * 100 if total_matches > 0 else 0
-
-    # Titles won: assuming a column named 'match_type' marks 'Final'
-    if 'match_type' in temp_df.columns:
-        titles_won = temp_df[(temp_df['winner'].str.lower() == team) & 
-                             (temp_df['match_type'].str.lower() == 'final')].shape[0]
+        # Plot for single season
+        fig ,ax = plt.subplots(figsize=(12,8))
+        sns.barplot(data=top_batsmen, x='batter', y='batsman_runs', palette='Blues_d')
+        ax.set_title(f"Top {n} Batsmen in Season {season}")
+        ax.set_xlabel("Batsman")
+        ax.set_ylabel("Runs")
+        ax.tick_params(axis='x',rotation = 45)
+        fig.tight_layout()
+        return fig
     else:
-        titles_won = 'Data Not Available'
+        # Plot for all seasons using FacetGrid
+        g = sns.FacetGrid(top_batsmen, col="season", col_wrap=4, height=4, sharex=False, sharey=False)
+        g.map_dataframe(sns.barplot, x='batter', y='batsman_runs', hue='batter', palette='Blues_d', legend=False)
+        g.set_titles("Season {col_name}")
+        g.set_axis_labels("Batsman", "Runs")
 
-    # Unique opponent teams
-    opponents = pd.concat([temp_df['team1'], temp_df['team2']]).str.lower().unique()
+        for ax in g.axes.flat:
+            for label in ax.get_xticklabels():
+                label.set_rotation(45)
 
-    # Dictionary to store per-opponent stats
-    opponent_stats = {}
+        g.tight_layout()
+        return g
+def plot_team_wins_season(df):
+    win_mat = an.team_win_by_season(df)
 
-    for opp in opponents:
-        if opp != team:
-            # Matches against that opponent
-            opp_df = temp_df[(temp_df['team1'].str.lower() == opp) | 
-                             (temp_df['team2'].str.lower() == opp)]
-            total_vs = opp_df.shape[0]
-            won_vs = (opp_df['winner'].str.lower() == team).sum()
-            lost_vs = (opp_df['winner'].str.lower() == opp).sum()
-            draw_vs = opp_df['winner'].isnull().sum()
-            win_perc_vs = (won_vs / total_vs) * 100 if total_vs > 0 else 0
+    fig, ax = plt.subplots(figsize=(12, 8))  # ✅ Corrected
 
-            opponent_stats[opp.title()] = {
-                'Matches': total_vs,
-                'Wins': won_vs,
-                'Losses': lost_vs,
-                'Draws': draw_vs,
-                'Win %': round(win_perc_vs, 2)
-            }
+    sns.heatmap(win_mat, annot=True, fmt=".0f", cmap="YlGnBu", linewidths=0.5, ax=ax)
 
-    # Final structured dictionary output
-    result= {
-        team.title(): {
-            'Overall': {
-                'Matches Played': total_matches,
-                'Wins': total_wins,
-                'Losses': total_loss,
-                'Draws': total_draws,
-                'Win %': round(win_percentage, 2),
-                'Titles Won': titles_won
-            },
-            'Against Opponents': opponent_stats
-        }
-    }
-    team_solo,team_opp=parse_team_record_to_df(result)
-    return team_solo,team_opp
+    ax.set_title("Matches won by Team across Seasons", fontsize=16)
+    ax.set_xlabel("Season")
+    ax.set_ylabel("Team")
+    ax.tick_params(axis='x', rotation=45)
+    ax.tick_params(axis='y', rotation=0)
+
+    fig.tight_layout()
+    return fig
+def plot_team_vs_opponents(stats_dict,team_name):
+    team_name = team_name.title()
+    data = stats_dict[team_name]['Against Opponents']
     
+    df = pd.DataFrame(data).T.reset_index().rename(columns={"index":'Opponent'})
+    plt.figure(figsize=(12,6))
     
+    sns.barplot(data=df.melt(id_vars='Opponent',value_vars=['Wins','Losses']),x='Opponent',y='value',hue='variable')
+    plt.title(f"{team_name} - wins and losses Vs each opponent")
+    plt.ylabel('Count')
+    plt.xlabel('Opponent Teams')
+    plt.xticks(rotation = 90)
+    plt.tight_layout()
+    plt.show()  
+def plot_win_percentage_against_Opponents(stats_dict, team_name):
+    team_name=team_name.title()
+    data = stats_dict[team_name]['Against Opponents']
+    df = pd.DataFrame(data).T.reset_index().rename(columns={'index':'Opponent'})
+    
+    plt.figure(figsize=(10,5))
+    sns.lineplot(data=df,x='Opponent',y='Win %',markers='o',color='g')
+    plt.title(f"{team_name}-win percentage vs each opponent ")
+    plt.ylabel('Win %')
+    plt.xlabel('opponent teams')
+    plt.xticks(rotation=85)
+    plt.ylim(0,100)
+    plt.tight_layout()
+    plt.show()
+def plot_highest_run_by_team(df,team_name,n=5):
+    highest = an.highest_scores_by_team(df,team_name)
+    fig , ax =plt.subplots(figsize=(12,8))
+    
+    sns.barplot(data=highest,x='Against',y='score')
+    ax.set_title(f"{team_name}- highest score against opponents")
+    ax.set_xlabel('teams')
+    ax.set_ylabel('scores')
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
 
-def highest_scores_by_team(df,team_name,n=5):
-    team_df=df[df['batting_team']==team_name]
-    if team_df.empty:
-        raise ValueError(f"team {team_name} not in data ")
-    scores = (team_df.groupby(['match_id','season','venue','bowling_team'])['total_runs'].sum()
-        .reset_index()
-        .sort_values(by='total_runs',ascending=False)
-        .head(n)           
-    )    
-    scores.rename(columns={'total_runs':'score','bowling_team':'Against'},inplace=True)
-    return scores
-def highest_chase_by_team(df,team_name,n=5):
-    team_df=df[df['bowling_team']==team_name]
-    if team_df.empty:
-        raise ValueError(f"team {team_name} not in data ")
-    chase =(team_df.groupby(['match_id','season','venue','batting_team'])['total_runs'].sum()
-            .reset_index()
-            .sort_values(by='total_runs',ascending=False)
-            .head(n)
-        )
-    chase.rename(columns={'total_runs':'score','batting_team':'Against'},inplace=True)
-    return chase
+    fig.tight_layout()
+    return fig
+def plot_highest_chase_by_team(df,team_name,n=5):
+    highest = an.highest_chase_by_team(df,team_name)
+    plt.figure(figsize=(12,8))
+    
+    sns.barplot(data=highest,x='Against',y='score',palette='viridis')
+    plt.title(f"{team_name}- highest score chase against opponents")
+    plt.xlabel('teams')
+    plt.ylabel('scores')
+    plt.xticks(rotation =65)
+    plt.tight_layout()
+    plt.show()
+def plot_growth_of_batsman_overtime(df, player_name):
+    growth = an.batsman_growth_by_season(df,player_name)
+    fig ,ax= plt.subplots(figsize=(12,8))
+    sns.lineplot(data=growth,x='Season',y='Runs',markers='o',label='Runs')
+    sns.lineplot(data=growth,x='Season',y='Strike Rate',markers='s',label='Strike Rate')
+    ax.set_title(f"player {player_name} growth over season")
+    ax.set_xlabel('sesaon ')
+    ax.set_ylabel('scores')
+    ax.tick_params(axis='x', rotation=45)
+    fig.tight_layout()
+    return fig
+
+
+def compare_growth(df, player1, player2):
+    growth = an.compare_batsman_growth(df, player1, player2)
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sns.lineplot(data=growth, x='Season', y='Runs', hue='player', marker='o', ax=ax)
+    ax.set_title(f"{player1} vs {player2} - Runs over Seasons")
+    ax.set_xlabel("Season")
+    ax.set_ylabel("Runs")
+    ax.grid(True)
+    fig.tight_layout()
+    return fig
+
+def top_runs_by_player(df, n=10):
+    runs = an.most_runs_by_IPL(df)
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sns.barplot(x='player', y='player_runs', data=runs.head(n), ax=ax)
+    ax.set_title('Most Runs by Player in IPL')
+    ax.set_xlabel('Player Name')
+    ax.set_ylabel('Runs')
+    plt.xticks(rotation=80)
+    fig.tight_layout()
+    return fig
+
+def plot_player_against_team(df, player_name, team_name, season='all'):
+    stats_df = an.player_against_teams(df, player_name, team_name)
+    metrics = ['Total Runs', 'Balls Faced', 'Dismissals', 'Strike Rate', 'Fours', 'Sixes']
+    values = [stats_df.at[0, metric] for metric in metrics]
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    bars = ax.barh(metrics, values, color='skyblue')
+    ax.set_xlabel('Value')
+    ax.set_title(f"{stats_df.at[0, 'Player']} vs {stats_df.at[0, 'Against Team']} ({stats_df.at[0, 'Season']})")
+
+    for bar in bars:
+        ax.text(bar.get_width(), bar.get_y() + 0.25, f'{bar.get_width():.1f}', va='center')
+
+    fig.tight_layout()
+    return fig
+
+def plot_player_head_to_head(df, player1, player2, start_year=None, end_year=None):
+    df_summary = an.player_head_to_head(df, player1, player2)
+    categories = ['Runs', 'Average', '6s', '4s', '50s', '100s', 'Strike Rate']
+    player1, player2 = df_summary['Player'].values
+    values1 = [df_summary.iloc[0][cat] if df_summary.iloc[0][cat] != 'NA' else 0 for cat in categories]
+    values2 = [df_summary.iloc[1][cat] if df_summary.iloc[1][cat] != 'NA' else 0 for cat in categories]
+
+    x = np.arange(len(categories))
+    width = 0.35
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bars1 = ax.bar(x - width / 2, values1, width, label=player1, color='steelblue')
+    bars2 = ax.bar(x + width / 2, values2, width, label=player2, color='orange')
+
+    for bar in bars1 + bars2:
+        height = bar.get_height()
+        ax.annotate(f'{height:.0f}', xy=(bar.get_x() + bar.get_width() / 2, height),
+                    xytext=(0, 3), textcoords="offset points", ha='center', va='bottom')
+
+    ax.set_ylabel('Value')
+    ax.set_title('Player Performance Comparison')
+    ax.set_xticks(x)
+    ax.set_xticklabels(categories)
+    ax.legend()
+    ax.grid(axis='y', linestyle='--', alpha=0.7)
+    fig.tight_layout()
+    return fig
+def plot_most_Strike_rate_in_IPL(df,n=10):
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.barplot(x="Player", y="Strike Rate", data=result_df, ax=ax, palette="viridis")
+    ax.set_title("Top Strike Rates in IPL")
+    ax.set_ylabel("Strike Rate")
+    ax.set_xlabel("Player")
+    plt.xticks(rotation=45)
+    return fig
+def plot_most_six_in_IPL(df, n=10):
+    data = an.most_six_by_player(df, n)
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sns.barplot(x='batter', y='sixes', data=data, ax=ax)
+    ax.set_title('Most 6s by Player in IPL')
+    ax.set_xlabel('Player Name')
+    ax.set_ylabel('6s')
+    ax.tick_params(axis='x', rotation=80)
+    fig.tight_layout()
+    return fig
+
+def plot_most_four_in_IPL(df, n=10):
+    data = an.most_fours_by_player(df, n)
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sns.barplot(x='batter', y='fours', data=data, ax=ax)
+    ax.set_title('Most 4s by Player in IPL')
+    ax.set_xlabel('Player Name')
+    ax.set_ylabel('4s')
+    ax.tick_params(axis='x', rotation=80)
+    fig.tight_layout()
+    return fig
+
+import plotly.graph_objects as go
+
+def plot_bowler_headtohead(df, player1, player2, start_year=None, end_year=None):
+    df = an.bowler_headtohead(df, player1, player2, start_year, end_year)
+    df_copy = df.copy()
+    df = normalize_dataframe(df)
+    metrices = [col for col in df.columns if col != 'Bowler' and df[col].dtype != 'object']
+
+    fig = go.Figure()
+
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+
+    for i, (_, row) in enumerate(df.iterrows()):
+        values = [row[m] for m in metrices]
+        values.append(values[0])  
+        color = colors[i % len(colors)]  
+        fig.add_trace(go.Scatterpolar(
+            r=values,
+            theta=metrices + [metrices[0]],
+            fill='toself',
+            name=row['Bowler'],
+            line=dict(color=color),
+            fillcolor=color,
+            opacity=0.6
+        ))
+
+    fig.update_layout(
+        title='Bowler vs Bowler – Normalized Radar Comparison',
+        polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+        showlegend=True
+    )
+
+    return fig
+
+def plot_team_season_performance(df,teamname):
+    result_df=an.team_season_performance(df,teamname)
+
+    fig, ax = plt.subplots(figsize=(12, 8))  # Use plt.subplots to get fig & ax
+    sns.lineplot(x='season', y='win %', data=result_df, ax=ax)
+    ax.set_title("Team Performance Season-wise")
+    ax.set_xlabel("Season / Years")
+    ax.set_ylabel("Winning Rate")
+    fig.tight_layout()
+
+    return fig 
+def plot_team_head_to_head(df,team_name1,team_name2,start_year=None,end_year=None):
+    result=an.head_to_head(df,team_name1,team_name2,start_year,end_year)
+    keys = [f'{team_name1.title()} Wins', f'{team_name2.title()} Wins']
+    values = [result.get(keys[0], 0), result.get(keys[1], 0)]
+
+    # Create DataFrame for plotting
+    data = pd.DataFrame({
+        'Team': keys,
+        'Wins': values
+    })
+    
+    fig , ax= plt.subplots(figsize=(12,8))
+    sns.barplot(x='Team',y='Wins',data=data,ax=ax, palette='Set2')
+    ax.set_title(f"{team_name1} Vs {team_name2} ")
+    ax.set_xlabel("teams")
+    ax.set_ylabel("Number of wins")
+    ax.bar_label(ax.containers[0],fmt='%d')
+    fig.tight_layout()
+    return fig 
