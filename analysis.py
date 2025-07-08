@@ -27,7 +27,7 @@ def normalize_dataframe(df, exclude_cols=None):
         if col_max != col_min:
             df_norm[col] = (df[col] - col_min) / (col_max - col_min)
         else:
-            df_norm[col] = 0  # or 1, if you prefer to indicate full scale
+            df_norm[col] = 0  
 
     return df_norm
 def top_batsmen_by_season(df,season='all',n=10):
@@ -51,7 +51,7 @@ def top_batsmen_by_season(df,season='all',n=10):
         fig.tight_layout()
         return fig
     else:
-        # Plot for all seasons using FacetGrid
+        # Plot for all seasons 
         g = sns.FacetGrid(top_batsmen, col="season", col_wrap=4, height=4, sharex=False, sharey=False)
         g.map_dataframe(sns.barplot, x='batter', y='batsman_runs', hue='batter', palette='Blues_d', legend=False)
         g.set_titles("Season {col_name}")
@@ -66,7 +66,7 @@ def top_batsmen_by_season(df,season='all',n=10):
 def plot_team_wins_season(df):
     win_mat = an.team_win_by_season(df)
 
-    fig, ax = plt.subplots(figsize=(12, 8))  # ✅ Corrected
+    fig, ax = plt.subplots(figsize=(12, 8))
 
     sns.heatmap(win_mat, annot=True, fmt=".0f", cmap="YlGnBu", linewidths=0.5, ax=ax)
 
@@ -274,7 +274,7 @@ def plot_bowler_headtohead(df, player1, player2, start_year=None, end_year=None)
 def plot_team_season_performance(df,teamname):
     result_df=an.team_season_performance(df,teamname)
 
-    fig, ax = plt.subplots(figsize=(12, 8))  # Use plt.subplots to get fig & ax
+    fig, ax = plt.subplots(figsize=(12, 8))  
     sns.lineplot(x='season', y='win %', data=result_df, ax=ax)
     ax.set_title("Team Performance Season-wise")
     ax.set_xlabel("Season / Years")
@@ -287,7 +287,7 @@ def plot_team_head_to_head(df,team_name1,team_name2,start_year=None,end_year=Non
     keys = [f'{team_name1.title()} Wins', f'{team_name2.title()} Wins']
     values = [result.get(keys[0], 0), result.get(keys[1], 0)]
 
-    # Create DataFrame for plotting
+    
     data = pd.DataFrame({
         'Team': keys,
         'Wins': values
